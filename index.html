@@ -2,67 +2,110 @@
 <html lang="fi">
 <head>
     <meta charset="UTF-8">
-    <title>C64/AdLib Tracker</title>
+    <title>WebTracker Pro</title>
     <style>
-        body { background: #111; color: #0f0; font-family: monospace; margin: 0; padding: 20px; overflow: hidden; }
-        .tabs { display: flex; border-bottom: 2px solid #0f0; margin-bottom: 20px; }
-        .tab { padding: 10px 20px; cursor: pointer; border: 1px solid #0f0; border-bottom: none; margin-right: 5px; background: #222; }
+        body { background: #111; color: #0f0; font-family: monospace; margin: 0; padding: 20px; overflow: hidden; user-select: none; }
+        h1 { margin-top: 0; font-size: 1.2rem; color: #fff; }
+        
+        /* Layout */
+        .container { display: flex; gap: 20px; }
+        .column { flex: 1; }
+        
+        /* Tabs */
+        .tabs { display: flex; border-bottom: 2px solid #0f0; margin-bottom: 15px; }
+        .tab { padding: 8px 15px; cursor: pointer; border: 1px solid #0f0; border-bottom: none; margin-right: 5px; background: #222; }
         .tab.active { background: #0f0; color: #000; font-weight: bold; }
-        .panel { display: none; }
+        .panel { display: none; background: #1a1a1a; padding: 15px; border: 1px solid #333; }
         .panel.active { display: block; }
         
-        button { background: #0f0; color: #000; border: none; padding: 5px 10px; cursor: pointer; font-family: inherit; font-weight: bold; margin-bottom: 10px;}
+        /* Controls */
+        button { background: #0f0; color: #000; border: none; padding: 8px 15px; cursor: pointer; font-family: inherit; font-weight: bold; margin-bottom: 10px;}
         button:hover { background: #fff; }
+        button.red { background: #f00; color: #fff; }
+        label { display: block; margin-bottom: 10px; font-size: 0.9rem; }
+        input[type=range] { width: 100%; margin-top: 5px; cursor: pointer; }
         
-        /* Floating Vis Window */
-        #vis-window {
-            position: absolute; top: 50px; right: 50px; width: 320px; height: 240px;
-            border: 2px solid #fff; background: #000; cursor: move; z-index: 100; box-shadow: 5px 5px 0px #333;
-        }
-        #vis-header { background: #fff; color: #000; padding: 5px; font-weight: bold; font-size: 12px; }
-        canvas { display: block; }
-
         /* Tracker Pattern Editor */
-        #pattern-editor { margin-top: 10px; font-family: monospace; background: #000; padding: 10px; height: 300px; overflow-y: hidden; border: 1px solid #333; width: fit-content; }
+        #pattern-editor { font-family: monospace; background: #000; padding: 10px; border: 1px solid #333; width: fit-content; }
         .row { display: flex; padding: 2px 0; }
         .row-number { width: 30px; color: #555; }
         .cell { width: 60px; text-align: center; border: 1px solid transparent; cursor: pointer; color: #aaa; }
         .cell.active { background: #0f0; color: #000; font-weight: bold; }
         .row.playing { background: #333; }
         .row.playing .cell.active { background: #fff; color: #000; }
+
+        /* Floating Visualizer */
+        #vis-window {
+            position: absolute; top: 20px; right: 20px; width: 320px; height: 240px;
+            border: 2px solid #fff; background: #000; cursor: move; z-index: 100; box-shadow: 5px 5px 0px #333;
+        }
+        #vis-header { background: #fff; color: #000; padding: 5px; font-weight: bold; font-size: 12px; }
+        canvas { display: block; }
     </style>
 </head>
 <body>
 
-    <div class="tabs">
-        <div class="tab active" onclick="switchTab('tracker')">Tracker</div>
-        <div class="tab" onclick="switchTab('synth')">VCO/VCA/VCF</div>
-        <div class="tab" onclick="switchTab('fx')">Arp & Tremolo</div>
-    </div>
+    <h1>WebTracker Pro (VCO/VCF/VCA/LFO)</h1>
 
-    <div id="tracker" class="panel active">
-        <button onclick="togglePlayback()">Play / Stop</button>
-        <label>Tempo: <input type="number" id="bpmInput" value="120" style="width: 50px;"></label>
-        <p style="color: #aaa; font-size: 12px;">Navigoi nuolilla. Nuotit: Z, S, X, D, C, V, G, B, H, N, J, M. Poista: Delete.</p>
-        <div id="pattern-editor"></div>
-    </div>
+    <div class="container">
+        <div class="column">
+            <button onclick="togglePlayback()" id="playBtn">Play / Stop</button>
+            <button onclick="autogeneratePattern()" class="red">Autogenerate</button>
+            <label style="display:inline-block; margin-left: 10px;">Tempo (BPM): <input type="number" id="bpmInput" value="130" style="width: 60px;"></label>
+            
+            <p style="color: #777; font-size: 11px;">Näppäimet: Z-M (Nuotit), K (Kick), Delete (Poista). Navigoi nuolilla.</p>
+            <div id="pattern-editor"></div>
+        </div>
 
-    <div id="synth" class="panel">
-        <p>Aaltomuoto: <strong>Mixed (SQR + SIN + TRI)</strong></p>
-        <p>ADSR & Filter ovat koodattu suoraan SynthChannel-luokkaan prototyypissä.</p>
-    </div>
+        <div class="column" style="max-width: 400px;">
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('synth')">VCO / VCA / VCF</div>
+                <div class="tab" onclick="switchTab('fx')">LFO & Arp</div>
+            </div>
 
-    <div id="fx" class="panel">
-        <p>Arpeggiaattori ja efektit tulevat tänne.</p>
+            <div id="synth" class="panel active">
+                <h3>VCO (Mix)</h3>
+                <label>Square Volume <input type="range" id="sqrVol" min="0" max="1" step="0.1" value="0.5"></label>
+                <label>Sine Volume <input type="range" id="sinVol" min="0" max="1" step="0.1" value="0.5"></label>
+                <label>Triangle Volume <input type="range" id="triVol" min="0" max="1" step="0.1" value="0.5"></label>
+                
+                <hr style="border-color:#333;">
+                <h3>VCF (Filter)</h3>
+                <label>Cutoff Freq <input type="range" id="vcfCutoff" min="100" max="5000" step="10" value="1500"></label>
+                <label>Resonance (Q) <input type="range" id="vcfRes" min="0" max="20" step="0.5" value="5"></label>
+
+                <hr style="border-color:#333;">
+                <h3>VCA (ADSR)</h3>
+                <label>Attack <input type="range" id="envA" min="0.01" max="1" step="0.01" value="0.05"></label>
+                <label>Decay <input type="range" id="envD" min="0.01" max="1" step="0.01" value="0.2"></label>
+                <label>Sustain <input type="range" id="envS" min="0" max="1" step="0.1" value="0.5"></label>
+                <label>Release <input type="range" id="envR" min="0.01" max="2" step="0.01" value="0.3"></label>
+            </div>
+
+            <div id="fx" class="panel">
+                <h3>Tremolo (VCA LFO)</h3>
+                <label>LFO Rate (Hz) <input type="range" id="lfoRate" min="0" max="20" step="0.5" value="5"></label>
+                <label>LFO Depth <input type="range" id="lfoDepth" min="0" max="1" step="0.05" value="0.5"></label>
+                
+                <hr style="border-color:#333;">
+                <h3>Arpeggiator</h3>
+                <label>Arp Mode (Major Chord)
+                    <select id="arpMode" style="width: 100%; margin-top:5px; background:#000; color:#0f0; border:1px solid #0f0; padding:5px;">
+                        <option value="off">Off</option>
+                        <option value="on">On (Fast +4, +7 semitones)</option>
+                    </select>
+                </label>
+            </div>
+        </div>
     </div>
 
     <div id="vis-window">
-        <div id="vis-header">VISUALIZER (16-COLOR) - Drag me</div>
+        <div id="vis-header">VISUALIZER - Drag me</div>
         <canvas id="visCanvas" width="320" height="215"></canvas>
     </div>
 
 <script>
-    // Tab Logic
+    // --- UI LIIKENNE & TABIT ---
     function switchTab(id) {
         document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -70,49 +113,128 @@
         event.target.classList.add('active');
     }
 
-    // Audio Context & Synth
+    // --- WEB AUDIO API ENGINE ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
     class SynthChannel {
         constructor(ctx) {
             this.ctx = ctx;
+            
+            // VCOs
             this.vcoSqr = this.ctx.createOscillator(); this.vcoSqr.type = 'square';
             this.vcoSin = this.ctx.createOscillator(); this.vcoSin.type = 'sine';
             this.vcoTri = this.ctx.createOscillator(); this.vcoTri.type = 'triangle';
             
-            this.vcf = this.ctx.createBiquadFilter();
-            this.vcf.type = 'lowpass'; this.vcf.frequency.value = 1500;
+            // Mixers for VCOs
+            this.gainSqr = this.ctx.createGain();
+            this.gainSin = this.ctx.createGain();
+            this.gainTri = this.ctx.createGain();
             
+            // VCF (Filter)
+            this.vcf = this.ctx.createBiquadFilter();
+            this.vcf.type = 'lowpass';
+            
+            // VCA (Amp) & Tremolo LFO
             this.vca = this.ctx.createGain(); this.vca.gain.value = 0;
+            this.tremoloGain = this.ctx.createGain();
+            this.lfo = this.ctx.createOscillator();
+            this.lfo.type = 'sine';
+            this.lfoGain = this.ctx.createGain();
+            
+            // Routing: VCO -> Mix -> VCF -> VCA -> Tremolo -> Destination
+            this.vcoSqr.connect(this.gainSqr); this.gainSqr.connect(this.vcf);
+            this.vcoSin.connect(this.gainSin); this.gainSin.connect(this.vcf);
+            this.vcoTri.connect(this.gainTri); this.gainTri.connect(this.vcf);
+            
+            this.vcf.connect(this.vca);
+            this.vca.connect(this.tremoloGain);
+            this.tremoloGain.connect(this.ctx.destination);
+            
+            // LFO Routing (Tremolo ohjaa vaimennusta)
+            this.lfo.connect(this.lfoGain);
+            this.lfoGain.connect(this.tremoloGain.gain);
 
-            this.vcoSqr.connect(this.vcf); this.vcoSin.connect(this.vcf); this.vcoTri.connect(this.vcf);
-            this.vcf.connect(this.vca); this.vca.connect(this.ctx.destination);
-
-            this.vcoSqr.start(); this.vcoSin.start(); this.vcoTri.start();
+            // Start hardware
+            this.vcoSqr.start(); this.vcoSin.start(); this.vcoTri.start(); this.lfo.start();
         }
-        playNoteWithADSR(freq, attack, decay, sustain, release) {
-            const now = this.ctx.currentTime;
-            this.vcoSqr.frequency.setValueAtTime(freq, now);
-            this.vcoSin.frequency.setValueAtTime(freq, now);
-            this.vcoTri.frequency.setValueAtTime(freq, now);
 
-            this.vca.gain.cancelScheduledValues(now);
-            this.vca.gain.setValueAtTime(0, now);
-            this.vca.gain.linearRampToValueAtTime(0.2, now + attack); 
-            this.vca.gain.linearRampToValueAtTime(0.2 * sustain, now + attack + decay); 
-            this.vca.gain.linearRampToValueAtTime(0, now + attack + decay + release);
+        updateParams() {
+            // Lue arvot käyttöliittymästä
+            this.gainSqr.gain.value = parseFloat(document.getElementById('sqrVol').value) * 0.3; // Skaalataan ettei säröydy
+            this.gainSin.gain.value = parseFloat(document.getElementById('sinVol').value) * 0.3;
+            this.gainTri.gain.value = parseFloat(document.getElementById('triVol').value) * 0.3;
+            
+            this.vcf.frequency.value = parseFloat(document.getElementById('vcfCutoff').value);
+            this.vcf.Q.value = parseFloat(document.getElementById('vcfRes').value);
+            
+            this.lfo.frequency.value = parseFloat(document.getElementById('lfoRate').value);
+            let depth = parseFloat(document.getElementById('lfoDepth').value);
+            this.lfoGain.gain.value = depth;
+            this.tremoloGain.gain.value = 1.0 - depth; // Estetään klippaaminen
+        }
+
+        playNote(freq, time) {
+            this.updateParams();
+            
+            let a = parseFloat(document.getElementById('envA').value);
+            let d = parseFloat(document.getElementById('envD').value);
+            let s = parseFloat(document.getElementById('envS').value);
+            let r = parseFloat(document.getElementById('envR').value);
+
+            // Arpeggiator (Jos päällä, vaihda taajuutta lennosta)
+            let arpMode = document.getElementById('arpMode').value;
+            if(arpMode === 'on') {
+                this.vcoSqr.frequency.setValueAtTime(freq, time);
+                this.vcoSqr.frequency.setValueAtTime(freq * 1.2599, time + 0.05); // +4 semi
+                this.vcoSqr.frequency.setValueAtTime(freq * 1.4983, time + 0.10); // +7 semi
+                
+                this.vcoSin.frequency.setValueAtTime(freq, time);
+                this.vcoSin.frequency.setValueAtTime(freq * 1.2599, time + 0.05);
+                this.vcoSin.frequency.setValueAtTime(freq * 1.4983, time + 0.10);
+            } else {
+                this.vcoSqr.frequency.setValueAtTime(freq, time);
+                this.vcoSin.frequency.setValueAtTime(freq, time);
+            }
+            this.vcoTri.frequency.setValueAtTime(freq / 2, time); // Sub-oktaavi aina tasan
+
+            // VCA ADSR
+            this.vca.gain.cancelScheduledValues(time);
+            this.vca.gain.setValueAtTime(0, time);
+            this.vca.gain.linearRampToValueAtTime(1, time + a); 
+            this.vca.gain.linearRampToValueAtTime(s, time + a + d); 
+            // Tehdään automaattinen release
+            this.vca.gain.linearRampToValueAtTime(0, time + a + d + r);
+        }
+
+        // Napakka Bassorumpu (Kick)
+        playKick(time) {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            
+            // Pitch Envelope (Erittäin nopea tiputus korkealta matalalle)
+            osc.frequency.setValueAtTime(150, time);
+            osc.frequency.exponentialRampToValueAtTime(0.001, time + 0.1);
+            
+            // Amplitude Envelope (Napakka isku)
+            gain.gain.setValueAtTime(1, time);
+            gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+            
+            osc.start(time);
+            osc.stop(time + 0.1);
         }
     }
 
-    // Tracker Logic
+    // --- TRACKER LOGIIKKA ---
     const noteFreqs = { 'C-4': 261.63, 'C#4': 277.18, 'D-4': 293.66, 'D#4': 311.13, 'E-4': 329.63, 'F-4': 349.23, 'F#4': 369.99, 'G-4': 392.00, 'G#4': 415.30, 'A-4': 440.00, 'A#4': 466.16, 'B-4': 493.88 };
-    const keyMap = { 'z':'C-4', 's':'C#4', 'x':'D-4', 'd':'D#4', 'c':'E-4', 'v':'F-4', 'g':'F#4', 'b':'G-4', 'h':'G#4', 'n':'A-4', 'j':'A#4', 'm':'B-4' };
+    const keyMap = { 'z':'C-4', 's':'C#4', 'x':'D-4', 'd':'D#4', 'c':'E-4', 'v':'F-4', 'g':'F#4', 'b':'G-4', 'h':'G#4', 'n':'A-4', 'j':'A#4', 'm':'B-4', 'k': 'K-4' }; // K = Kick
     
     const totalRows = 16; const totalCols = 3;
     let pattern = Array.from({length: totalRows}, () => Array(totalCols).fill('---'));
     let cursorRow = 0; let cursorCol = 0; let currentRow = 0;
     let isPlaying = false; let seqInterval; let channels = [];
 
-    function initChannels() {
+    function initAudio() {
         if(audioCtx.state === 'suspended') audioCtx.resume();
         if(channels.length === 0) channels = [new SynthChannel(audioCtx), new SynthChannel(audioCtx), new SynthChannel(audioCtx)];
     }
@@ -131,6 +253,10 @@
             for (let c = 0; c < totalCols; c++) {
                 const cell = document.createElement('div');
                 cell.className = 'cell' + (r === cursorRow && c === cursorCol ? ' active' : '');
+                
+                // Värjätään Kick punaiseksi helpompaa lukemista varten
+                if(pattern[r][c] === 'K-4') cell.style.color = '#f55';
+                
                 cell.innerText = pattern[r][c];
                 cell.onmousedown = () => { cursorRow = r; cursorCol = c; renderPattern(); };
                 rowDiv.appendChild(cell);
@@ -140,20 +266,31 @@
     }
 
     function playRow() {
+        let time = audioCtx.currentTime;
         for(let i = 0; i < totalCols; i++) {
             const note = pattern[currentRow][i];
-            if(note !== '---' && noteFreqs[note]) channels[i].playNoteWithADSR(noteFreqs[note], 0.05, 0.1, 0.5, 0.2);
+            if(note === 'K-4') {
+                channels[i].playKick(time);
+                flashVis('#ff0000'); // Väläytä punaista kickin tahdissa
+            } else if(note !== '---' && noteFreqs[note]) {
+                channels[i].playNote(noteFreqs[note], time);
+            }
         }
         currentRow = (currentRow + 1) % totalRows;
         renderPattern();
     }
 
     function togglePlayback() {
-        initChannels();
+        initAudio();
         isPlaying = !isPlaying;
+        document.getElementById('playBtn').innerText = isPlaying ? "STOP" : "Play / Stop";
+        document.getElementById('playBtn').style.background = isPlaying ? "#f00" : "#0f0";
+        document.getElementById('playBtn').style.color = isPlaying ? "#fff" : "#000";
+
         if(isPlaying) {
             currentRow = 0;
             const bpm = parseInt(document.getElementById('bpmInput').value) || 120;
+            // Lines per beat = 4, joten ms = 60000 / (BPM * 4)
             seqInterval = setInterval(playRow, 60000 / (bpm * 4));
         } else {
             clearInterval(seqInterval);
@@ -161,8 +298,31 @@
         }
     }
 
-    // Input Handling
+    // --- AUTOGENERATE ---
+    function autogeneratePattern() {
+        const pScale = ['C-4', 'D#4', 'F-4', 'G-4', 'A#4']; // Pentatoninen skaala kuulostaa aina hyvältä
+        for(let r=0; r<totalRows; r++) {
+            // Kanava 1: Satunnainen melodia
+            pattern[r][0] = Math.random() > 0.4 ? pScale[Math.floor(Math.random() * pScale.length)] : '---';
+            // Kanava 2: Basso (harvemmin)
+            pattern[r][1] = Math.random() > 0.7 ? 'C-4' : '---';
+            // Kanava 3: Neljäsosa Kick-rumpu (Techno-beat)
+            pattern[r][2] = (r % 4 === 0) ? 'K-4' : '---';
+        }
+        
+        // Arvo myös satunnaiset synasäädöt!
+        document.getElementById('vcfCutoff').value = Math.random() * 3000 + 500;
+        document.getElementById('vcfRes').value = Math.random() * 15;
+        document.getElementById('envA').value = Math.random() * 0.1; // Lyhyt attack on parempi
+        
+        renderPattern();
+    }
+
+    // --- INPUT ---
     document.addEventListener('keydown', (e) => {
+        // Estetään default-selaustoiminnot UI:ssa inputteja lukuunottamatta
+        if(e.target.tagName === 'INPUT') return;
+
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
             e.preventDefault();
             if (e.key === "ArrowUp") cursorRow = (cursorRow > 0) ? cursorRow - 1 : totalRows - 1;
@@ -173,31 +333,52 @@
             pattern[cursorRow][cursorCol] = '---';
             cursorRow = (cursorRow < totalRows - 1) ? cursorRow + 1 : 0;
         } else if (keyMap[e.key.toLowerCase()]) {
-            pattern[cursorRow][cursorCol] = keyMap[e.key.toLowerCase()];
-            initChannels();
-            channels[cursorCol].playNoteWithADSR(noteFreqs[pattern[cursorRow][cursorCol]], 0.01, 0.1, 0.5, 0.1);
+            let note = keyMap[e.key.toLowerCase()];
+            pattern[cursorRow][cursorCol] = note;
+            
+            initAudio();
+            if(note === 'K-4') channels[cursorCol].playKick(audioCtx.currentTime);
+            else channels[cursorCol].playNote(noteFreqs[note], audioCtx.currentTime);
+            
             cursorRow = (cursorRow < totalRows - 1) ? cursorRow + 1 : 0;
         }
         renderPattern();
     });
 
-    // Visualizer Logic
-    const ctx = document.getElementById('visCanvas').getContext('2d');
+    // --- VISUALIZER ---
+    const canvas = document.getElementById('visCanvas');
+    const ctx = canvas.getContext('2d');
     const palette16 = ["#000", "#FFF", "#800", "#AFE", "#C4C", "#0C5", "#00A", "#EE7", "#D85", "#640", "#F77", "#333", "#777", "#AF6", "#08F", "#BBB"];
+    let flashColor = null;
+
+    function flashVis(color) { flashColor = color; }
+
     function drawVisuals() {
-        ctx.fillStyle = palette16[Math.floor(Math.random() * 16)];
-        ctx.fillRect(Math.random() * 320, Math.random() * 215, Math.random() * 50, Math.random() * 50);
+        // Fade to black ilmiö
+        ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        if(flashColor) {
+            ctx.fillStyle = flashColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            flashColor = null;
+        } else if(isPlaying) {
+            // Generoi C64/EGA -tyylistä häiriötä toiston aikana
+            ctx.fillStyle = palette16[Math.floor(Math.random() * 16)];
+            ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, Math.random() * 40 + 10, Math.random() * 40 + 10);
+        }
         requestAnimationFrame(drawVisuals);
     }
     drawVisuals();
 
-    // Draggable Window
+    // --- DRAGGABLE WINDOW ---
     let isDragging = false; let offsetX, offsetY;
     const visWin = document.getElementById('vis-window');
     document.getElementById('vis-header').addEventListener('mousedown', (e) => { isDragging = true; offsetX = e.clientX - visWin.offsetLeft; offsetY = e.clientY - visWin.offsetTop; });
     document.addEventListener('mousemove', (e) => { if(isDragging) { visWin.style.left = (e.clientX - offsetX) + 'px'; visWin.style.top = (e.clientY - offsetY) + 'px'; } });
     document.addEventListener('mouseup', () => isDragging = false);
 
+    // Initial render
     renderPattern();
 </script>
 </body>
