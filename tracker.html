@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <title>Pro Tracker: Ultimate Edition</title>
+    <style>
+        body { margin: 0; background: #050505; color: #0f0; font-family: 'Courier New', Courier, monospace; overflow: hidden; user-select: none; }
+        canvas { display: block; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        .atari-render {
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+        }
+
+        .ui-layer { position: absolute; z-index: 10; width: 100%; height: 100%; pointer-events: none; display: flex; justify-content: space-between;}
+        .panel { background: rgba(10, 10, 10, 0.85); border: 1px solid #333; padding: 10px; pointer-events: auto; display: flex; flex-direction: column; height: 100vh; width: 340px; box-shadow: 0 0 20px #000; }
+        .header { text-align: center; border-bottom: 1px solid #0f0; padding-bottom: 5px; margin-bottom: 10px; font-weight: bold;}
+        
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px; font-size: 11px; }
+        .controls label { display: flex; flex-direction: column; }
+        input[type="range"], select { width: 100%; background: #222; color: #0f0; border: 1px solid #0f0; }
+        
+        .tracker-container { display: flex; gap: 5px; overflow-y: auto; flex-grow: 1; padding-right: 5px; }
+        .track-col { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+        .track-title { text-align: center; font-size: 11px; background: #222; margin-bottom: 5px; padding: 3px 0;}
+        
+        .step { display: flex; gap: 5px; background: #111; padding: 2px; font-size: 13px; cursor: pointer; border: 1px solid transparent; }
+        .step .hex { color: #555; }
+        .step .note { color: #5f5; }
+        .step.empty .note { color: #333; }
+        
+        .step.cursor { border: 1px solid #ff0; background: #330; }
+        .step.playing { background: #050; color: #fff; }
+        .step.playing .note { color: #fff; }
+        .step.playing .hex { color: #8f8; }
+        
+        #top-bar { position: absolute; top: 0; left: 360px; right: 360px; z-index: 10; background: rgba(0,0,0,0.85); padding: 10px; pointer-events: auto; display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; align-items: center; border-bottom: 1px solid #333; }
+        button, input[type="file"] { background: #222; color: #0f0; border: 1px solid #0f0; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+        button:hover { background: #0f0; color: #000; }
+        .active-btn { background: #0f0; color: #000; }
+        .rec-btn { color: #f00; border-color: #f00; }
+        .rec-btn:hover { background: #f00; color: #fff; }
+        
+        .val-badge { background: #0f0; color: #000; padding: 0 4px; border-radius: 3px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="top-bar">
+    <button id="startBtn" onclick="initSystem()">1. Käynnistä Audio</button>
+    <button id="atariBtn" onclick="toggleAtari()">Atari: OFF</button>
+    <button id="cubeBtn" onclick="toggleCubeMode()">Kuutio Mode: OFF</button>
+    <label style="font-size: 11px;">Tausta: <input type="file" id="bgInput" accept="image/*,video/*" onchange="loadBackground(this)" style="width: 130px;"></label>
+    <label style="font-size: 11px;">Skaala: 
+        <select id="scaleSelect" style="width: auto;">
+            <option value="minorPent">Minor Pentatonic</option>
+            <option value="minor">Natural Minor</option>
+            <option value="major">Major</option>
+            <option value="dorian">Dorian</option>
+            <option value="phrygian">Phrygian</option>
+            <option value="lydian">Lydian</option>
+            <option value="mixolydian">Mixolydian</option>
+        </select>
+    </label>
+    <label style="font-size: 11px;">Tempo: <span id="tempoVal" class="val-badge">120</span>
+        <input type="range" id="tempo" min="60" max="240" value="120" oninput="document.getElementById('tempoVal').innerText = this.value">
+    </label>
+    <button id="recBtn" class="rec-btn" onclick="toggleRecording()" disabled>2. REC</button>
+</div>
+
+<div class="ui-layer">
+    <div class="panel" id="panelLeft">
+        <div class="header">STRINGS (2 CH)</div>
+        <div class="controls">
+            <button onclick="smartGen('str1'); smartGen('str2');">Auto-Gen All</button>
+            <button onclick="clearTrack('str1'); clearTrack('str2');">Clear All</button>
+            <label>Volume <input type="range" id="str_vol" min="0" max="1" step="0.05" value="0.7"></label>
+            <label>VCF Sweep <input type="range" id="str_sweep" min="0" max="4000" value="1500"></label>
+            <label>Attack <input type="range" id="str_atk" min="0.05" max="3" step="0.05" value="0.8"></label>
+            <label>Decay <input type="range" id="str_dec" min="0.05" max="3" step="0.05" value="0.5"></label>
+            <label>Sustain Lvl <input type="range" id="str_sus" min="0" max="1" step="0.1" value="0.8"></label>
+            <label>Release <input type="range" id="str_rel" min="0.1" max="8" step="0.1" value="3.0"></label>
+            <label style="grid-column: span 2;">Nuotin Pituus (Gate) <input type="range" id="str_gate" min="0.1" max="5" step="0.1" value="1.5"></label>
+        </div>
+        <div class="tracker-container">
+            <div class="track-col" id="str1_col"><div class="track-title">STR 1</div></div>
+            <div class="track-col" id="str2_col"><div class="track-title">STR 2</div></div>
+        </div>
+    </div>
+
+    <div class="panel" id="panelRight">
+        <div class="header">SID ARP (2 CH)</div>
+        <div class="controls">
+            <button onclick="smartGen('arp1'); smartGen('arp2');">Auto-Gen All</button>
+            <button onclick="clearTrack('arp1'); clearTrack('arp2');">Clear All</button>
+            <label>Volume <input type="range" id="arp_vol" min="0" max="1" step="0.05" value="0.6"></label>
+            <label>Arp Speed (ms) <input type="range" id="arp_spd" min="10" max="500" value="80"></label>
+            <label>Attack <input type="range" id="arp_atk" min="0.01" max="1" step="0.05" value="0.1"></label>
+            <label>Decay <input type="range" id="arp_dec" min="0.1" max="2" step="0.1" value="0.5"></label>
+            <label>Sustain Lvl <input type="range" id="arp_sus" min="0" max="1" step="0.1" value="0.6"></label>
+            <label>Release <input type="range" id="arp_rel" min="0.1" max="8" step="0.1" value="2.0"></label>
+            <label style="grid-column: span 2;">Nuotin Pituus (Gate) <input type="range" id="arp_gate" min="0.1" max="5" step="0.1" value="1.0"></label>
+        </div>
+        <div class="tracker-container">
+            <div class="track-col" id="arp1_col"><div class="track-title">ARP 1</div></div>
+            <div class="track-col" id="arp2_col"><div class="track-title">ARP 2</div></div>
+        </div>
+    </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+// --- CORE LOGIC & MUSIIKKI ---
+const NUM_STEPS = 32;
+
+const noteNames = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-'];
+function getMidiFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+function getMidiName(midi) { return noteNames[midi % 12] + (Math.floor(midi / 12) - 1); }
+
+const scales = {
+    minorPent: [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24],
+    minor:     [0, 2, 3, 5, 7, 8, 10, 12, 14, 15, 17, 19, 20, 22, 24],
+    major:     [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24],
+    dorian:    [0, 2, 3, 5, 7, 9, 10, 12, 14, 15, 17, 19, 21, 22, 24],
+    phrygian:  [0, 1, 3, 5, 7, 8, 10, 12, 13, 15, 17, 19, 20, 22, 24],
+    lydian:    [0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24],
+    mixolydian:[0, 2, 4, 5, 7, 9, 10, 12, 14, 16, 17, 19, 21, 22, 24]
+};
+
+const keyMap = { 'z':48, 's':49, 'x':50, 'd':51, 'c':52, 'v':53, 'g':54, 'b':55, 'h':56, 'n':57, 'j':58, 'm':59, 'q':60, '2':61, 'w':62, '3':63, 'e':64, 'r':65, '5':66, 't':67, '6':68, 'y':69, '7':70, 'u':71, 'i':72 };
+
+let tracks = {
+    str1: Array.from({length: NUM_STEPS}, () => ({ a: false, n: '---', f: 0 })),
+    str2: Array.from({length: NUM_STEPS}, () => ({ a: false, n: '---', f: 0 })),
+    arp1: Array.from({length: NUM_STEPS}, () => ({ a: false, n: '---', f: 0 })),
+    arp2: Array.from({length: NUM_STEPS}, () => ({ a: false, n: '---', f: 0 }))
+};
+
+let cursor = { track: 'str1', step: 0 };
+let currentStep = 0, nextNoteTime = 0, isPlaying = false, sysInitialized = false;
+let isAtari = false, isCubeMode = false;
+let audioCtx, masterGain, strGain, arpGain, destStream;
+let bgMedia = null;
+
+// --- VISUAALISET OLIOIT ---
+const shapes = {
+    str1: { type: 'circle', baseR: 20, r: 20, hue: 180, a: 0 },
+    str2: { type: 'square', baseS: 30, s: 30, hue: 280, a: 0, x: 0 },
+    arp1: { type: 'curve',  baseS: 15, s: 15, hue: 30,  aX: 0, aY: 0 },
+    arp2: { type: 'tri',    baseS: 25, s: 25, hue: 330, a: 0 }
+};
+
+let nebulaSize = 5;
+let nebulaRadius = 100;
+let nebulaHue = 0;
+
+let cubes = [];
+const cubeVertices = [
+    [-1, -1, -1], [ 1, -1, -1], [ 1,  1, -1], [-1,  1, -1],
+    [-1, -1,  1], [ 1, -1,  1], [ 1,  1,  1], [-1,  1,  1]
+];
+const cubeEdges = [
+    [0,1], [1,2], [2,3], [3,0], [4,5], [5,6], [6,7], [7,4], [0,4], [1,5], [2,6], [3,7]
+];
+
+function initCubes() {
+    cubes = [];
+    for(let i=0; i<10; i++) {
+        cubes.push({
+            x: (Math.random() - 0.5) * window.innerWidth * 0.8, y: (Math.random() - 0.5) * window.innerHeight * 0.8, z: (Math.random() - 0.5) * 500,
+            vx: (Math.random() - 0.5) * 3, vy: (Math.random() - 0.5) * 3, vz: (Math.random() - 0.5) * 3,
+            rx: Math.random() * Math.PI, ry: Math.random() * Math.PI, rz: Math.random() * Math.PI,
+            rvx: (Math.random() - 0.5) * 0.04, rvy: (Math.random() - 0.5) * 0.04, rvz: (Math.random() - 0.5) * 0.04,
+            size: 20 + Math.random() * 30, baseSize: 20 + Math.random() * 30,
+            hue: Math.floor(Math.random() * 360)
+        });
+    }
+}
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+    if(isAtari) { canvas.width = 320; canvas.height = 200; canvas.classList.add('atari-render'); } 
+    else { canvas.width = window.innerWidth; canvas.height = window.innerHeight; canvas.classList.remove('atari-render'); }
+    initCubes();
+}
+window.onresize = resize; resize();
+
+// --- TAUSTA KUVAT/VIDEOT ---
+function loadBackground(input) {
+    if(input.files && input.files[0]) {
+        const file = input.files[0];
+        const url = URL.createObjectURL(file);
+        if(file.type.startsWith('video')) {
+            bgMedia = document.createElement('video');
+            bgMedia.src = url; bgMedia.loop = true; bgMedia.muted = true; bgMedia.play();
+        } else {
+            bgMedia = new Image(); bgMedia.src = url;
+        }
+    }
+}
+
+// --- UI RAKENNUS ---
+const trackOrder = ['str1', 'str2', 'arp1', 'arp2'];
+function buildColumn(trackId, containerId) {
+    const container = document.getElementById(containerId);
+    for(let i=0; i<NUM_STEPS; i++) {
+        let div = document.createElement('div');
+        div.className = 'step empty'; div.id = `${trackId}_${i}`;
+        div.innerHTML = `<span class="hex">${i.toString(16).toUpperCase().padStart(2, '0')}</span> <span class="note">---</span>`;
+        div.onclick = () => setCursor(trackId, i);
+        container.appendChild(div);
+    }
+}
+buildColumn('str1', 'str1_col'); buildColumn('str2', 'str2_col'); 
+buildColumn('arp1', 'arp1_col'); buildColumn('arp2', 'arp2_col');
+
+function setCursor(track, step) {
+    document.querySelectorAll('.cursor').forEach(el => el.classList.remove('cursor'));
+    cursor.track = track; cursor.step = step;
+    document.getElementById(`${track}_${step}`).classList.add('cursor');
+}
+setCursor('str1', 0);
+
+function renderCell(track, stepIdx) {
+    const cell = document.getElementById(`${track}_${stepIdx}`);
+    const data = tracks[track][stepIdx];
+    cell.querySelector('.note').innerText = data.a ? data.n : '---';
+    if(data.a) cell.classList.remove('empty'); else cell.classList.add('empty');
+}
+
+// --- ÄLYKÄS GENEROINTI ---
+function smartGen(track) {
+    const selectedScale = scales[document.getElementById('scaleSelect').value];
+    for(let i=0; i<NUM_STEPS; i++) {
+        let chance = track.startsWith('str') ? 0.85 : 0.65;
+        if(Math.random() > chance) {
+            let interval = selectedScale[Math.floor(Math.random() * selectedScale.length)];
+            let midi = 48 + interval; 
+            tracks[track][i] = { a: true, n: getMidiName(midi), f: getMidiFreq(midi) };
+        } else {
+            tracks[track][i] = { a: false, n: '---', f: 0 };
+        }
+        renderCell(track, i);
+    }
+}
+function clearTrack(track) {
+    for(let i=0; i<NUM_STEPS; i++) { tracks[track][i] = { a: false, n: '---', f: 0 }; renderCell(track, i); }
+}
+
+// --- NÄPPÄIMISTÖ ---
+window.addEventListener('keydown', (e) => {
+    if(!sysInitialized) return;
+    if(e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; // Älä soita jos kirjoittaa kenttään
+    
+    if(e.key === 'ArrowDown') { setCursor(cursor.track, (cursor.step + 1) % NUM_STEPS); e.preventDefault(); return; }
+    if(e.key === 'ArrowUp') { setCursor(cursor.track, (cursor.step - 1 + NUM_STEPS) % NUM_STEPS); e.preventDefault(); return; }
+    if(e.key === 'ArrowRight') { setCursor(trackOrder[(trackOrder.indexOf(cursor.track) + 1) % 4], cursor.step); e.preventDefault(); return; }
+    if(e.key === 'ArrowLeft') { setCursor(trackOrder[(trackOrder.indexOf(cursor.track) - 1 + 4) % 4], cursor.step); e.preventDefault(); return; }
+    if(e.key === 'Delete' || e.key === 'Backspace') {
+        tracks[cursor.track][cursor.step] = { a: false, n: '---', f: 0 };
+        renderCell(cursor.track, cursor.step); setCursor(cursor.track, (cursor.step + 1) % NUM_STEPS); return;
+    }
+    const midi = keyMap[e.key.toLowerCase()];
+    if(midi) {
+        let f = getMidiFreq(midi);
+        tracks[cursor.track][cursor.step] = { a: true, n: getMidiName(midi), f: f };
+        renderCell(cursor.track, cursor.step);
+        if(cursor.track.startsWith('str')) { playStrings(f, audioCtx.currentTime); triggerShape(cursor.track); }
+        else { playArp(f, audioCtx.currentTime); triggerShape(cursor.track); }
+        setCursor(cursor.track, (cursor.step + 1) % NUM_STEPS);
+    }
+});
+
+// --- AUDIO MOOTTORI ---
+function initSystem() {
+    if(sysInitialized) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    masterGain = audioCtx.createGain(); masterGain.gain.value = 0.5;
+    strGain = audioCtx.createGain(); arpGain = audioCtx.createGain();
+    
+    strGain.connect(masterGain); arpGain.connect(masterGain);
+    masterGain.connect(audioCtx.destination);
+    destStream = audioCtx.createMediaStreamDestination();
+    masterGain.connect(destStream);
+
+    sysInitialized = true; isPlaying = true; nextNoteTime = audioCtx.currentTime + 0.1;
+    document.getElementById('startBtn').innerText = "Audio Päällä"; document.getElementById('startBtn').style.background = "#050";
+    document.getElementById('recBtn').disabled = false;
+    
+    updateVolumes();
+    requestAnimationFrame(scheduler); renderVisuals();
+}
+
+function updateVolumes() {
+    if(!sysInitialized) return;
+    strGain.gain.value = parseFloat(document.getElementById('str_vol').value);
+    arpGain.gain.value = parseFloat(document.getElementById('arp_vol').value);
+}
+document.getElementById('str_vol').addEventListener('input', updateVolumes);
+document.getElementById('arp_vol').addEventListener('input', updateVolumes);
+
+function playStrings(freq, time) {
+    let atk = parseFloat(document.getElementById('str_atk').value);
+    let dec = parseFloat(document.getElementById('str_dec').value);
+    let sus = parseFloat(document.getElementById('str_sus').value);
+    let rel = parseFloat(document.getElementById('str_rel').value);
+    let gate = parseFloat(document.getElementById('str_gate').value);
+    let vcfSweep = parseFloat(document.getElementById('str_sweep').value);
+
+    let osc1 = audioCtx.createOscillator(), osc2 = audioCtx.createOscillator();
+    let filter = audioCtx.createBiquadFilter(), gain = audioCtx.createGain();
+
+    osc1.type = 'sawtooth'; osc1.frequency.value = freq;
+    osc2.type = 'sawtooth'; osc2.frequency.value = freq * 1.01; 
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(300 + vcfSweep, time);
+    filter.frequency.exponentialRampToValueAtTime(300, time + atk + dec);
+
+    osc1.connect(filter); osc2.connect(filter); filter.connect(gain); gain.connect(strGain);
+
+    let maxVol = 0.3; let susVol = Math.max(maxVol * sus, 0.001);
+
+    gain.gain.setValueAtTime(0.001, time);
+    gain.gain.linearRampToValueAtTime(maxVol, time + atk); 
+    gain.gain.exponentialRampToValueAtTime(susVol, time + atk + dec); 
+    gain.gain.setValueAtTime(susVol, time + atk + dec + gate); 
+    gain.gain.exponentialRampToValueAtTime(0.001, time + atk + dec + gate + rel); 
+
+    osc1.start(time); osc2.start(time); 
+    osc1.stop(time + atk + dec + gate + rel + 0.1); osc2.stop(time + atk + dec + gate + rel + 0.1);
+}
+
+function playArp(baseFreq, time) {
+    let atk = parseFloat(document.getElementById('arp_atk').value);
+    let dec = parseFloat(document.getElementById('arp_dec').value);
+    let sus = parseFloat(document.getElementById('arp_sus').value);
+    let rel = parseFloat(document.getElementById('arp_rel').value);
+    let gate = parseFloat(document.getElementById('arp_gate').value);
+    let arpSpd = parseFloat(document.getElementById('arp_spd').value) / 1000;
+
+    let osc = audioCtx.createOscillator(), filter = audioCtx.createBiquadFilter(), gain = audioCtx.createGain();
+
+    osc.type = 'square'; 
+    let totalDur = atk + dec + gate + rel;
+    let arpIntervals = [1.0, 1.5, 2.0];
+    let currentArpTime = 0; let stepIndex = 0;
+    
+    while(currentArpTime < totalDur) {
+        osc.frequency.setValueAtTime(baseFreq * arpIntervals[stepIndex % arpIntervals.length], time + currentArpTime);
+        currentArpTime += arpSpd; stepIndex++;
+    }
+
+    filter.type = 'lowpass'; filter.frequency.value = 2000; 
+    osc.connect(filter); filter.connect(gain); gain.connect(arpGain);
+
+    let maxVol = 0.3; let susVol = Math.max(maxVol * sus, 0.001);
+
+    gain.gain.setValueAtTime(0.001, time);
+    gain.gain.linearRampToValueAtTime(maxVol, time + atk);
+    gain.gain.exponentialRampToValueAtTime(susVol, time + atk + dec);
+    gain.gain.setValueAtTime(susVol, time + atk + dec + gate);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + totalDur);
+
+    osc.start(time); osc.stop(time + totalDur + 0.1);
+}
+
+function scheduler() {
+    if(isPlaying) {
+        let tempo = parseFloat(document.getElementById('tempo').value);
+        let stepTime = (60.0 / tempo) / 4; 
+
+        while (nextNoteTime < audioCtx.currentTime + 0.1) {
+            scheduleStep(currentStep, nextNoteTime);
+            nextNoteTime += stepTime;
+            currentStep = (currentStep + 1) % NUM_STEPS;
+        }
+    }
+    requestAnimationFrame(scheduler);
+}
+
+function scheduleStep(stepIdx, time) {
+    document.querySelectorAll('.playing').forEach(e => e.classList.remove('playing'));
+    
+    trackOrder.forEach(track => {
+        const el = document.getElementById(`${track}_${stepIdx}`);
+        if(el) el.classList.add('playing');
+        
+        const data = tracks[track][stepIdx];
+        if(data.a) {
+            if(track.startsWith('str')) playStrings(data.f, time);
+            else if(track.startsWith('arp')) playArp(data.f, time);
+            
+            setTimeout(() => triggerShape(track), (time - audioCtx.currentTime) * 1000);
+        }
+    });
+}
+
+// --- VISUAALISET TRIGGERIT ---
+function triggerShape(id) {
+    nebulaSize = 15; // Keskusnebula sykkii
+    nebulaRadius = 200;
+    nebulaHue = Math.random() * 360;
+
+    if(isCubeMode) {
+        let amount = 1 + Math.floor(Math.random() * 3);
+        for(let i=0; i<amount; i++) {
+            let idx = Math.floor(Math.random() * cubes.length);
+            cubes[idx].size = cubes[idx].baseSize * 2.5; 
+            cubes[idx].hue = Math.floor(Math.random() * 360);
+        }
+    } else {
+        if(id === 'str1') shapes.str1.r = shapes.str1.baseR * 4; 
+        if(id === 'str2') shapes.str2.s = shapes.str2.baseS * 3.5;
+        if(id === 'arp1') shapes.arp1.s = shapes.arp1.baseS * 4.5;
+        if(id === 'arp2') shapes.arp2.s = shapes.arp2.baseS * 4.0;
+    }
+}
+
+function toggleAtari() {
+    isAtari = !isAtari;
+    const btn = document.getElementById('atariBtn');
+    btn.innerText = "Atari: " + (isAtari ? "ON" : "OFF");
+    btn.classList.toggle('active-btn');
+    resize();
+}
+
+function toggleCubeMode() {
+    isCubeMode = !isCubeMode;
+    const btn = document.getElementById('cubeBtn');
+    btn.innerText = "Kuutio Mode: " + (isCubeMode ? "ON" : "OFF");
+    btn.classList.toggle('active-btn');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); // Tyhjennä ruutu moodin vaihdossa
+}
+
+function quantizeColor(h, s, l, a=1) {
+    if(!isAtari) return `hsla(${h}, ${s}%, ${l}%, ${a})`;
+    h = Math.floor(h / 30) * 30;
+    return `hsla(${h}, 100%, 50%, ${a})`;
+}
+
+// --- RENDER SILMUKKA ---
+function renderVisuals() {
+    // 1. Taustan piirto ja himmennys
+    ctx.fillStyle = isAtari ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.15)';
+    if(bgMedia) {
+        // Himmennetään mediatausta sopivasti
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(bgMedia, 0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Lisähimmennyskerros trailseille
+    }
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+
+    // 2. Keskus-Nebulan animaatio
+    nebulaSize += (5 - nebulaSize) * 0.05;
+    nebulaRadius += (100 - nebulaRadius) * 0.05;
+    ctx.globalCompositeOperation = 'screen';
+    for(let i=0; i<12; i++) {
+        let t = Date.now() * 0.001 + i;
+        ctx.strokeStyle = quantizeColor((i*20 + nebulaHue)%360, 60, 50, 0.15);
+        ctx.lineWidth = isAtari ? 2 : 1;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(t)*nebulaRadius, cy + Math.sin(t*0.5)*nebulaRadius, 50+i*nebulaSize, 0, Math.PI*2);
+        ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // 3. Kuutiot TAI Peruskuviot
+    if(isCubeMode) {
+        const focalLength = 400;
+        cubes.forEach(c => {
+            c.x += c.vx; c.y += c.vy; c.z += c.vz;
+            let limitX = canvas.width * 0.8; let limitY = canvas.height * 0.8;
+            if(c.x > limitX || c.x < -limitX) c.vx *= -1;
+            if(c.y > limitY || c.y < -limitY) c.vy *= -1;
+            if(c.z > 500 || c.z < -500) c.vz *= -1;
+
+            c.rx += c.rvx; c.ry += c.rvy; c.rz += c.rvz;
+            c.size += (c.baseSize - c.size) * 0.05;
+
+            let projected = [];
+            for(let v of cubeVertices) {
+                let x = v[0] * c.size; let y = v[1] * c.size; let z = v[2] * c.size;
+                let y1 = y * Math.cos(c.rx) - z * Math.sin(c.rx);
+                let z1 = y * Math.sin(c.rx) + z * Math.cos(c.rx);
+                let x2 = x * Math.cos(c.ry) + z1 * Math.sin(c.ry);
+                let z2 = -x * Math.sin(c.ry) + z1 * Math.cos(c.ry);
+                let x3 = x2 * Math.cos(c.rz) - y1 * Math.sin(c.rz);
+                let y3 = x2 * Math.sin(c.rz) + y1 * Math.cos(c.rz);
+                x3 += c.x; y3 += c.y; z2 += c.z;
+                let scale = focalLength / (focalLength + z2 + 1000); 
+                projected.push({ x: cx + x3 * scale, y: cy + y3 * scale });
+            }
+
+            ctx.strokeStyle = quantizeColor(c.hue, 100, 60);
+            ctx.lineWidth = isAtari ? 2 : 1.5;
+            ctx.beginPath();
+            for(let e of cubeEdges) {
+                ctx.moveTo(projected[e[0]].x, projected[e[0]].y);
+                ctx.lineTo(projected[e[1]].x, projected[e[1]].y);
+            }
+            ctx.stroke();
+        });
+
+    } else {
+        // Perusmuodot animaatiot
+        shapes.str1.a += 0.02; shapes.str1.r += (shapes.str1.baseR - shapes.str1.r) * 0.02; 
+        ctx.strokeStyle = quantizeColor(shapes.str1.hue, 100, 60); ctx.lineWidth = isAtari ? 4 : 2;
+        ctx.beginPath(); ctx.arc(cx + Math.cos(shapes.str1.a) * (canvas.height * 0.25), cy + Math.sin(shapes.str1.a) * (canvas.height * 0.25), shapes.str1.r, 0, Math.PI*2); ctx.stroke();
+
+        shapes.str2.a += 0.03; shapes.str2.s += (shapes.str2.baseS - shapes.str2.s) * 0.02;
+        ctx.strokeStyle = quantizeColor(shapes.str2.hue, 100, 60);
+        let s2 = shapes.str2.s;
+        ctx.strokeRect(cx + Math.sin(shapes.str2.a * 0.5) * (canvas.width * 0.3) - s2/2, cy + Math.cos(shapes.str2.a * 1.5) * (canvas.height * 0.3) - s2/2, s2, s2);
+
+        shapes.arp1.aX += 0.05; shapes.arp1.aY += 0.07; shapes.arp1.s += (shapes.arp1.baseS - shapes.arp1.s) * 0.02;
+        let x3 = cx + Math.sin(shapes.arp1.aX) * (canvas.width * 0.4); let y3 = cy + Math.cos(shapes.arp1.aY) * (canvas.height * 0.4);
+        ctx.fillStyle = quantizeColor(shapes.arp1.hue, 100, 60);
+        ctx.beginPath(); ctx.moveTo(x3, y3 - shapes.arp1.s); ctx.lineTo(x3 + shapes.arp1.s, y3); ctx.lineTo(x3, y3 + shapes.arp1.s); ctx.lineTo(x3 - shapes.arp1.s, y3); ctx.fill();
+        
+        shapes.arp2.a += 0.04; shapes.arp2.s += (shapes.arp2.baseS - shapes.arp2.s) * 0.02;
+        let x4 = cx + Math.cos(shapes.arp2.a * 1.2) * (canvas.width * 0.35); let y4 = cy + Math.sin(shapes.arp2.a * 0.8) * (canvas.height * 0.35);
+        ctx.strokeStyle = quantizeColor(shapes.arp2.hue, 100, 60);
+        ctx.beginPath(); ctx.moveTo(x4, y4 - shapes.arp2.s); ctx.lineTo(x4 + shapes.arp2.s, y4 + shapes.arp2.s); ctx.lineTo(x4 - shapes.arp2.s, y4 + shapes.arp2.s); ctx.closePath(); ctx.stroke();
+    }
+
+    requestAnimationFrame(renderVisuals);
+}
+
+// --- NAUHOITUS ---
+let mediaRecorder, recordedChunks = [];
+function toggleRecording() {
+    const btn = document.getElementById('recBtn');
+    if(mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop(); btn.innerText = "2. REC"; btn.classList.remove('active-btn');
+    } else {
+        const canvasStream = canvas.captureStream(30); 
+        const audioTracks = destStream.stream.getAudioTracks();
+        const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+        
+        mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+        recordedChunks = [];
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.style.display = 'none';
+            a.href = url; a.download = 'pro_tracker_ultimate.webm';
+            document.body.appendChild(a); a.click(); URL.revokeObjectURL(url);
+        };
+        mediaRecorder.start(); btn.innerText = "STOP REC"; btn.classList.add('active-btn');
+    }
+}
+</script>
+</body>
+</html>
